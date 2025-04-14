@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>GPU Monitor</title>
+    <style>
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        padding: 40px;
+        background: #eef1f5;
+        color: #333;
+      }
+
+      h1 {
+        text-align: center;
+        color: #222;
+        margin-bottom: 30px;
+      }
+
+      .host-group {
+        margin-top: 40px;
+      }
+
+      .host-title {
+        font-size: 1.4em;
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #444;
+        border-left: 5px solid #2d3436;
+        padding-left: 10px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        background: #fff;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        margin-bottom: 30px;
+      }
+
+      th,
+      td {
+        padding: 14px 20px;
+        text-align: left;
+      }
+
+      th {
+        background: #2d3436;
+        color: #fff;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 14px;
+        letter-spacing: 0.5px;
+      }
+
+      td {
+        border-bottom: 1px solid #ececec;
+        font-size: 15px;
+      }
+
+      tr:hover td {
+        background-color: #f8f9fa;
+      }
+
+      td:last-child {
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>GPU Inventory</h1>
+    <div id="gpuGroups"></div>
+
+<script>
+  async function loadData() {
+
+const [gpuRes, hostRes, hwRes] = await Promise.all([
+  fetch('/gpu/list'),
+  fetch('/host/list'),
+  fetch('/hardware/list')
+]);
+
+
+    const gpus = await gpuRes.json();
+    const hosts = await hostRes.json();
+const hardware = await hwRes.json();
+
+    const container = document.getElementById('gpuGroups');
+    container.innerHTML = '';
+
+    // Group GPUs by host
+    const grouped = {};
+    gpus.forEach(gpu => {
+      const parts = gpu.name.split('@');
+      if (parts.length !== 3) return;
+      const [slot, host, model] = parts;
+
+      if (!grouped[host]) grouped[host] = [];
+      grouped[host].push({ ...gpu, slot, host, model });
+    });
+
+    for (const host in grouped) {
+      const groupDiv = document.createElement('div');
+      groupDiv.className = 'host-group';
+
+      const title = document.createElement('div');
+      title.className = 'host-title';
+      title.textContent = `${host}`;
+      groupDiv.appendChild(title);
+
+      // Host metrics display (from /host/list)
+      const hostInfo = hosts.find(h => h.hostname === host);
+      if (hostInfo) {
+console.log(hostInfo);
+        const hostStats = document.createElement('div');
+        hostStats.style.margin = '10px 0 20px 10px';
+const cpuLow = hostInfo.cpu_usage_percent > 50;
+const memoryUsedPercent = (hostInfo.memory_used_mb / hostInfo.memory_total_mb) * 100;
+const memoryLow = memoryUsedPercent > 50;
+
+const diskUsedGB = parseInt(hostInfo.disk_used);
+const diskTotalGB = parseInt(hostInfo.disk_total);
+const diskUsedPercent = (diskUsedGB / diskTotalGB) * 100;
+const diskLow = diskUsedPercent > 50;
+
+hostStats.innerHTML = `
+  <div><strong>CPU Usage:</strong> <span style="color:${cpuLow ? 'red' : 'inherit'}">${hostInfo.cpu_usage_percent}%</span></div>
+  <div><strong>Memory Used:</strong> <span style="color:${memoryLow ? 'red' : 'inherit'}">${hostInfo.memory_used_mb} MB / ${hostInfo.memory_total_mb} MB</span></div>
+  <div><strong>Disk Used:</strong> <span style="color:${diskLow ? 'red' : 'inherit'}">${hostInfo.disk_used} / ${hostInfo.disk_total}</span></div>
+  <div><strong>Last Updated:</strong> ${new Date(hostInfo.updated_at).toLocaleString()}</div>
+`;
+
+
+        groupDiv.appendChild(hostStats);
+      }
+
+const hwInfo = hardware.find(hw => hw.hostname === host);
+if (0&&hwInfo) {
+  const hwStats = document.createElement('div');
+  hwStats.style.margin = '10px 0 20px 10px';
+  hwStats.style.padding = '10px';
+  hwStats.style.background = '#f4f6f8';
+  hwStats.style.borderLeft = '4px solid #6c5ce7';
+  hwStats.style.fontSize = '14px';
+
+  const hw = hwInfo;
+
+  hwStats.innerHTML = `
+    <div style="font-weight:bold; font-size:1.2em; margin-bottom:10px;">${hw.hostname}</div>
+    <div><strong>Uptime:</strong> ${hw.uptime}</div>
+    <div><strong>Kernel:</strong> ${hw.kernel}</div>
+    <div><strong>Distro:</strong> ${hw.distro}</div>
+    <div><strong>CPU:</strong><pre style="white-space:pre-wrap;">${hw.cpu}</pre></div>
+    <div><strong>Memory:</strong><pre style="white-space:pre-wrap;">${hw.memory}</pre></div>
+    <div><strong>Storage:</strong><pre style="white-space:pre-wrap;">${hw.storage}</pre></div>
+    <div><strong>PCI:</strong><pre style="white-space:pre-wrap;">${hw.pci}</pre></div>
+    <div><strong>USB:</strong><pre style="white-space:pre-wrap;">${hw.usb}</pre></div>
+    <div><strong>Network:</strong><pre style="white-space:pre-wrap;">${JSON.stringify(hw.network, null, 2)}</pre></div>
+    <div><strong>Disks:</strong><pre style="white-space:pre-wrap;">${JSON.stringify(hw.disk, null, 2)}</pre></div>
+  `;
+
+  groupDiv.appendChild(hwStats);
+}
+
+      const table = document.createElement('table');
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Slot</th>
+            <th>Model</th>
+            <th>Fan %</th>
+            <th>Temp (°C)</th>
+            <th>Power (W)</th>
+            <th>Memory Used</th>
+            <th>Util %</th>
+            <th>Proc Count</th>
+            <th>Processes</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      `;
+
+      const tbody = table.querySelector('tbody');
+
+      grouped[host].forEach(gpu => {
+        const updatedTime = new Date(gpu.updated_at);
+        const now = new Date();
+        const ageMinutes = (now - updatedTime) / 60000;
+        const timeColor = ageMinutes > 5 ? 'red' : '#333';
+
+        const row = `
+          <tr>
+            <td>${gpu.slot}</td>
+            <td>${gpu.model}</td>
+            <td>${gpu.fan_percent}%</td>
+            <td>${gpu.temperature_c}°C</td>
+            <td>${gpu.power_watt.toFixed(2)}W</td>
+            <td>${gpu.memory_used_mib} / ${gpu.memory_total_mib} MiB</td>
+            <td>${gpu.utilization_gpu_percent}%</td>
+            <td>${gpu.process_count}</td>
+            <td>${gpu.process_names}</td>
+            <td style="color:${timeColor}">${updatedTime.toLocaleTimeString()}</td>
+          </tr>
+        `;
+
+        tbody.insertAdjacentHTML('beforeend', row);
+      });
+
+      groupDiv.appendChild(table);
+      container.appendChild(groupDiv);
+    }
+  }
+
+  loadData();
+  setInterval(loadData, 5000);
+</script>
+
+  </body>
+</html>
+
+
